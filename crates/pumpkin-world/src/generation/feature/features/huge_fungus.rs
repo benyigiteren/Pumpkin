@@ -43,8 +43,18 @@ impl HugeFungusFeature {
             total_height *= 2;
         }
 
-        if !self.planted && pos.0.y + total_height + 1 >= chunk.top_y() as i32 {
-            return false;
+        if !self.planted {
+            if pos.0.y + total_height + 1 >= chunk.top_y() as i32 {
+                return false;
+            }
+            // Vanilla HugeFungusFeature: ensure trunk path is clear up to total_height.
+            // If obstructed by solid terrain (nether bridges, roof), fungus cannot generate through it.
+            for dy in 0..total_height {
+                let block_pos = pos.add(0, dy, 0);
+                if !self.is_replaceable(chunk, block_registry, block_pos, true) {
+                    return false;
+                }
+            }
         }
 
         let is_huge = !self.planted && random.next_f32() < 0.06;
@@ -102,6 +112,8 @@ impl HugeFungusFeature {
                         } else {
                             chunk.set_block_state(&block_pos.0, self.stem_state);
                         }
+                    } else {
+                        break;
                     }
                 }
             }
