@@ -31,6 +31,51 @@ pub(super) fn is_empty_or_water<T: GenerationCache>(chunk: &T, pos: BlockPos) ->
         || block == BlockId::WATER
 }
 
+pub struct CaveSurface {
+    pub ceiling_y: i32,
+    pub floor_y: i32,
+}
+
+pub(super) fn find_cave_surface<T: GenerationCache>(
+    chunk: &T,
+    x: i32,
+    start_y: i32,
+    z: i32,
+    search_range: i32,
+) -> Option<CaveSurface> {
+    let min_y = (chunk.bottom_y() as i32 + 1).max(start_y - search_range);
+    let max_y = (chunk.top_y() as i32 - 1).min(start_y + search_range);
+
+    let y = start_y;
+    if !is_empty_or_water(chunk, BlockPos::new(x, y, z)) {
+        return None;
+    }
+
+    let mut ceiling_y = None;
+    for cur_y in y..=max_y {
+        if !is_empty_or_water(chunk, BlockPos::new(x, cur_y, z)) {
+            ceiling_y = Some(cur_y);
+            break;
+        }
+    }
+
+    let mut floor_y = None;
+    for cur_y in (min_y..=y).rev() {
+        if !is_empty_or_water(chunk, BlockPos::new(x, cur_y, z)) {
+            floor_y = Some(cur_y);
+            break;
+        }
+    }
+
+    match (ceiling_y, floor_y) {
+        (Some(c), Some(f)) if c - f > 1 => Some(CaveSurface {
+            ceiling_y: c,
+            floor_y: f,
+        }),
+        _ => None,
+    }
+}
+
 pub(super) fn grow_pointed_dripstone<T: GenerationCache>(
     chunk: &mut T,
     start_pos: BlockPos,
