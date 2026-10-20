@@ -66,6 +66,10 @@ impl DungeonFeature {
             return false;
         }
 
+        let cannot_replace = |id: pumpkin_data::BlockId| {
+            id.has_tag(pumpkin_data::tag::Block::MINECRAFT_FEATURES_CANNOT_REPLACE)
+        };
+
         for dx in min_x..=max_x {
             for dy in (-1..=3i32).rev() {
                 for dz in min_z..=max_z {
@@ -85,8 +89,12 @@ impl DungeonFeature {
                             .is_solid();
                         let cur_state =
                             GenerationCache::get_block_state(chunk, &wall_pos).to_state();
+                        let cur_id = cur_state.id.to_block_id();
+                        if cannot_replace(cur_id) {
+                            continue;
+                        }
                         let cur_solid = cur_state.is_solid();
-                        let is_chest = cur_state.id.to_block() == &Block::CHEST;
+                        let is_chest = cur_id == Block::CHEST.id;
 
                         let world_min_y = chunk.bottom_y() as i32;
                         if wall_pos.y >= world_min_y && !below_solid {
@@ -103,11 +111,14 @@ impl DungeonFeature {
                         }
                     } else {
                         let state = GenerationCache::get_block_state(chunk, &wall_pos).to_state();
-                        let is_chest = state.id.to_block() == &Block::CHEST;
-                        let is_spawner = state.id.to_block() == &Block::SPAWNER;
-                        if !is_chest && !is_spawner {
-                            chunk.set_block_state(&wall_pos, Block::CAVE_AIR.default_state);
+                        let cur_id = state.id.to_block_id();
+                        if cannot_replace(cur_id)
+                            || cur_id == Block::CHEST.id
+                            || cur_id == Block::SPAWNER.id
+                        {
+                            continue;
                         }
+                        chunk.set_block_state(&wall_pos, Block::CAVE_AIR.default_state);
                     }
                 }
             }
@@ -177,5 +188,52 @@ impl DungeonFeature {
         chunk.add_block_entity(&pos.0, entity_nbt);
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ProtoChunk;
+    use crate::generation::get_world_gen;
+    use pumpkin_data::dimension::Dimension;
+    use pumpkin_util::random::legacy_rand::LegacyRand;
+    use pumpkin_util::world_seed::Seed;
+
+    #[test]
+    fn dungeon_generates_spawner_and_cobblestone() {
+        let world_gen = get_world_gen(
+            Seed(42),
+            Dimension::OVERWORLD,
+            false,
+            Vec::new(),
+            String::new(),
+        );
+        let mut chunk = ProtoChunk::new(0, 0, &world_gen);
+        for x in 0..16 {
+            for z in 0..16 {
+                for y in 0..10 {
+                    chunk.set_block_state(x, y, z, Block::STONE.default_state);
+                }
+            }
+        }
+        chunk.set_block_state(5, 5, 8, Block::CAVE_AIR.default_state);
+        chunk.set_block_state(5, 6, 8, Block::CAVE_AIR.default_state);
+        chunk.set_block_state(11, 5, 8, Block::CAVE_AIR.default_state);
+        chunk.set_block_state(11, 6, 8, Block::CAVE_AIR.default_state);
+
+        let mut random = RandomGenerator::Legacy(LegacyRand::from_seed(42));
+        let generated = DungeonFeature::generate(
+            &mut chunk,
+            -64,
+            384,
+            pumpkin_data::placed_feature::PlacedFeature::MonsterRoom,
+            &mut random,
+            BlockPos::new(8, 5, 8),
+        );
+        if generated {
+            let spawner = chunk.get_block_state(&Vector3::new(8, 5, 8));
+            assert_eq!(spawner.to_block_id(), Block::SPAWNER.id);
+        }
     }
 }
